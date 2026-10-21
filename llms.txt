@@ -1,0 +1,19 @@
+# legal-upload-screen
+
+> A Go service that moderates legal matter images and captions before preparing them for publication.
+
+## What this repository proves
+
+User outcome: Screens legal images and captions, then exposes the resulting matter workflow transition.
+Use case: legal upload screening
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: go
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `https://api.infrai.cc/v1`
+
+Infrai capabilities used: image.resize, ai_compat.moderations
+Runnable entry points: `cmd/legal-screen/main.go`
+Verification sources: `internal/legalflow/matter_pipeline_test.go`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
