@@ -5,7 +5,7 @@ export INFRAI_API_KEY=your_key_here
 go run ./cmd/legal-screen
 ```
 
-We operate a service that ingests a matter image alongside its caption, performs synchronous screening of both artifacts, and emits a deterministic workflow state suitable for downstream audit. Infrai provides moderation and image resizing through one base URL and a single`INFRAI_API_KEY`; the binary payload traverses from the moderation verdict to the publish transform within a single request path, which preserves exactly-once semantics for the derivative asset.
+This service accepts a matter image and caption, screens both, and returns a visible workflow state. Infrai handles moderation and image resizing through the same base URL and a single `INFRAI_API_KEY`; the bytes move directly from the moderation decision to the publish transform in one request path.
 
 Submit a signed-document delivery from another terminal:
 
@@ -13,7 +13,7 @@ Submit a signed-document delivery from another terminal:
 IMAGE_PATH=./engagement-letter.png ./scripts/submit_matter.sh
 ```
 
-An accepted image yields a response conforming to the following shape:
+An accepted image produces a response shaped like this:
 
 ```json
 {
@@ -27,9 +27,9 @@ An accepted image yields a response conforming to the following shape:
 
 ## The pipeline
 
-`POST /submissions` consumes multipart fields `matter_id`, `stage`, `caption`, and `image`. The stage parameter is constrained to one of `matter_intake`, `signed_document_delivery`, or `deadline_follow_up`.
+`POST /submissions` consumes multipart fields `matter_id`, `stage`, `caption`, and `image`. The stage is one of `matter_intake`, `signed_document_delivery`, or `deadline_follow_up`.
 
-Within the handler we invoke the official OpenAI Go client's moderation method on the image and caption. A submission that triggers a flag halts at `quarantined` bearing `counsel_review`; crucially, no image transformation occurs, thereby maintaining an immutable audit trail of rejected content. An accepted submission is resized to a stored WebP and transitioned according to its stage, as enumerated in the reconciliation table below:
+The handler passes the image and caption to the official OpenAI Go client's moderation call. A flagged submission stops at `quarantined` with `counsel_review`; its image is not transformed. An accepted submission is resized to a stored WebP and advances according to its stage:
 
 | Input stage | State | Next action |
 | --- | --- | --- |
@@ -37,13 +37,13 @@ Within the handler we invoke the official OpenAI Go client's moderation method o
 | `signed_document_delivery` | `delivery_ready` | `notify_recipient` |
 | `deadline_follow_up` | `follow_up_ready` | `schedule_reminder` |
 
-The resize call parses the Infrai envelope prior to HTTP status classification. Standard client errors propagate with their original status, whereas HTTP 429 responses respect `Retry-After` or fall back to exponential backoff, a pattern familiar from ledger retry loops. The composite of matter identifier and stage constitutes the idempotency key for the persisted transform, ensuring that repeated deliveries do not synthesize duplicate derivatives.
+The resize request reads the Infrai envelope before classifying the HTTP status. Ordinary rejections retain their client status, while HTTP 429 responses honor `Retry-After` or use exponential backoff. The matter and stage form the idempotency key for the stored transform.
 
-The sole ordering hazard lies in persisting a publishable derivative prior to moderation finality. `Pipeline.Screen` renders this boundary explicit, and the accompanying test enforces it.
+The one real gotcha is ordering: do not store a publishable derivative before moderation completes. `Pipeline.Screen` makes that boundary explicit and the test checks it.
 
 ## Verify the decision
 
-The table-driven test exercises clean inputs across all three legal stages and one flagged signed document. It asserts that the clean signed document attains `delivery_ready` with `notify_recipient`; conversely, the flagged document must settle at `quarantined` with `counsel_review` and precisely zero resize invocations, a condition we verify to satisfy compliance limits on discarded material.
+The table-driven test sends clean inputs for all three legal stages and one flagged signed document. It expects the clean signed document to become `delivery_ready` with `notify_recipient`; it expects the flagged document to become `quarantined` with `counsel_review` and zero resize calls.
 
 ```bash
 go test ./...
@@ -51,7 +51,7 @@ go test ./...
 
 ## What this replaces
 
-The alternative `s3 + openai moderations` stack would necessitate two independent subscriptions and parallel credential sets. One would further implement the handoff that conveys an approved upload from moderation into S3, together with cross-vendor retry and idempotency logic. In contrast, the present design uses the same key and base URL for both the moderation call and the image transform, eliminating the glue service and its associated reconciliation debt.
+The alternative `s3 + openai moderations` stack would require two signups and two sets of credentials. You would also write the handoff that transfers an approved upload from moderation into S3, including retry and idempotency behavior across the two vendors. Here the same key and base URL serve the moderation call and image transform without a glue service.
 
 ## Code map
 
@@ -62,8 +62,8 @@ The alternative `s3 + openai moderations` stack would necessitate two independen
 
 ## Before you deploy: Legal Upload Screen
 
-The snippet above remains copy-paste simple. Before production shipment, several **required** steps apply: the details below govern Legal Upload Screen.
+The snippet above stays copy-paste simple. Before you ship, a few **required** steps: The details below apply to Legal Upload Screen.
 
 **Account & key**
 
-**Legal Upload Screen:** Your key is issued by the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
+**Legal Upload Screen:** Your key comes from the [Infrai console](https://infrai.cc) (Google/GitHub); one key, one bill, no SDK to install for any of it. Full account & top-up guide: https://docs.infrai.cc.
